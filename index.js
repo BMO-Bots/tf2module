@@ -24,8 +24,7 @@ const client = new Client({
 
 // Simple command prefix
 const PREFIX = '?';
-// Ruolo richiesto per usare il form
-const REQUIRED_ROLE_ID = '1324815872124129370';
+// Nessun ruolo richiesto
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`Bot loggato come ${c.user.tag}`);
@@ -39,14 +38,8 @@ client.on(Events.MessageCreate, async (message) => {
 
   if (cmd.toLowerCase() === 'torneotf2') {
     try {
-      // Consenti l'uso solo nel server e solo a chi ha il ruolo richiesto
+      // Consenti l'uso solo nel server
       if (!message.inGuild?.() && !message.guild) return;
-      const hasRole = message.member?.roles?.cache?.has(REQUIRED_ROLE_ID);
-      if (!hasRole) {
-        // Cancella il messaggio di comando e interrompi
-        await message.delete().catch(() => {});
-        return;
-      }
 
       const openBtn = new ButtonBuilder()
         .setCustomId('open_tf2_form')
@@ -74,6 +67,13 @@ client.on(Events.MessageCreate, async (message) => {
 // Handle button -> open modal
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
+    if (interaction.isButton() && interaction.customId === 'open_tf2_form') {
+      // Controllo che sia nel server prima di aprire il modal
+      if (!interaction.inGuild()) {
+        await interaction.reply({ content: 'Questo comando può essere usato solo nel server.', ephemeral: true });
+        return;
+      }
+
       const modal = new ModalBuilder()
         .setCustomId('tf2_form_modal')
         .setTitle('Iscrizione Torneo TF2');
