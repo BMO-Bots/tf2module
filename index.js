@@ -115,10 +115,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .setTitle('Nuova iscrizione TF2')
         .setColor(0x2b2d31)
         .addFields(
-          { name: 'Utente', value: `<@${interaction.user.id}>`, inline: false },
-          { name: 'Nome Steam', value: steamName, inline: true },
-          { name: 'Ore giocate', value: hours, inline: true },
-          { name: 'Main', value: mainClass, inline: true },
+          { name: 'Nome Steam', value: steamName, inline: false },
+          { name: 'Ore giocate', value: hours, inline: false },
+          { name: 'Main', value: mainClass, inline: false },
         )
         .setTimestamp(new Date());
 
