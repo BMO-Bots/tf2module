@@ -74,18 +74,6 @@ client.on(Events.MessageCreate, async (message) => {
 // Handle button -> open modal
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
-    if (interaction.isButton() && interaction.customId === 'open_tf2_form') {
-      // Controllo ruolo prima di aprire il modal
-      if (!interaction.inGuild()) {
-        await interaction.reply({ content: 'Questo comando può essere usato solo nel server.', ephemeral: true });
-        return;
-      }
-      const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
-      if (!member || !member.roles.cache.has(REQUIRED_ROLE_ID)) {
-        await interaction.reply({ content: 'Non hai il ruolo richiesto per usare questo form.', ephemeral: true });
-        return;
-      }
-
       const modal = new ModalBuilder()
         .setCustomId('tf2_form_modal')
         .setTitle('Iscrizione Torneo TF2');
