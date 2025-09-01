@@ -24,6 +24,8 @@ const client = new Client({
 
 // Simple command prefix
 const PREFIX = '?';
+// Ruolo richiesto per usare il form
+const REQUIRED_ROLE_ID = '1324815872124129370';
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`Bot loggato come ${c.user.tag}`);
@@ -37,6 +39,15 @@ client.on(Events.MessageCreate, async (message) => {
 
   if (cmd.toLowerCase() === 'torneotf2') {
     try {
+      // Consenti l'uso solo nel server e solo a chi ha il ruolo richiesto
+      if (!message.inGuild?.() && !message.guild) return;
+      const hasRole = message.member?.roles?.cache?.has(REQUIRED_ROLE_ID);
+      if (!hasRole) {
+        // Cancella il messaggio di comando e interrompi
+        await message.delete().catch(() => {});
+        return;
+      }
+
       const openBtn = new ButtonBuilder()
         .setCustomId('open_tf2_form')
         .setStyle(ButtonStyle.Success)
@@ -47,10 +58,15 @@ client.on(Events.MessageCreate, async (message) => {
       // Invia solo il tasto con il testo richiesto
       await message.channel.send({ content: '-# <:ChillPoldo:1311760332695408640>  jesgran.ovh', components: [row] });
 
+      // Cancella anche il messaggio del comando per evitare spam
+      await message.delete().catch(() => {});
+
       await message.react('✅');
     } catch (err) {
       console.error(err);
-      await message.reply('Errore durante l\'invio del messaggio.');
+      // Prova comunque a cancellare il comando se possibile
+      try { await message.delete(); } catch {}
+      try { await message.reply('Errore durante l\'invio del messaggio.'); } catch {}
     }
   }
 });
@@ -59,6 +75,17 @@ client.on(Events.MessageCreate, async (message) => {
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
     if (interaction.isButton() && interaction.customId === 'open_tf2_form') {
+      // Controllo ruolo prima di aprire il modal
+      if (!interaction.inGuild()) {
+        await interaction.reply({ content: 'Questo comando può essere usato solo nel server.', ephemeral: true });
+        return;
+      }
+      const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
+      if (!member || !member.roles.cache.has(REQUIRED_ROLE_ID)) {
+        await interaction.reply({ content: 'Non hai il ruolo richiesto per usare questo form.', ephemeral: true });
+        return;
+      }
+
       const modal = new ModalBuilder()
         .setCustomId('tf2_form_modal')
         .setTitle('Iscrizione Torneo TF2');
@@ -95,6 +122,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     if (interaction.isModalSubmit() && interaction.customId === 'tf2_form_modal') {
+
       const steamName = interaction.fields.getTextInputValue('steam_name');
       const hours = interaction.fields.getTextInputValue('hours_played');
       const mainClass = interaction.fields.getTextInputValue('main_class');
