@@ -112,7 +112,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       const embed = new EmbedBuilder()
-        .setTitle('Nuova iscrizione TF2')
         .setColor(0x2b2d31)
         .addFields(
           { name: 'Nome Steam', value: steamName, inline: false },
