@@ -1,6 +1,6 @@
 'use strict';
 require('dotenv').config();
-const { Client, GatewayIntentBits, Partials, Events, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, Events, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, EmbedBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } = require('discord.js');
 const http = require('http');
 const PORT = process.env.PORT || 3000;
 
@@ -24,8 +24,7 @@ const client = new Client({
 
 // Simple command prefix
 const PREFIX = '?';
-// Ruolo richiesto per usare il form
-const REQUIRED_ROLE_ID = '1324815872124129370';
+// Nessun ruolo richiesto
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`Bot loggato come ${c.user.tag}`);
@@ -37,34 +36,19 @@ client.on(Events.MessageCreate, async (message) => {
 
   const [cmd] = message.content.slice(PREFIX.length).trim().split(/\s+/);
 
-  if (cmd.toLowerCase() === 'torneotf2') {
+  if (cmd.toLowerCase() === 'torneor6') {
     try {
-      // Consenti l'uso solo nel server e solo a chi ha il ruolo richiesto
       if (!message.inGuild?.() && !message.guild) return;
-      const hasRole = message.member?.roles?.cache?.has(REQUIRED_ROLE_ID);
-      if (!hasRole) {
-        // Cancella il messaggio di comando e interrompi
-        await message.delete().catch(() => {});
-        return;
-      }
 
       const openBtn = new ButtonBuilder()
-        .setCustomId('open_tf2_form')
+        .setCustomId('open_r6_form')
         .setStyle(ButtonStyle.Success)
-        .setLabel('Apri il form TF2');
+        .setLabel('Apri il form R6');      const row = new ActionRowBuilder().addComponents(openBtn);
 
-      const row = new ActionRowBuilder().addComponents(openBtn);
-
-      // Invia solo il tasto con il testo richiesto
-      await message.channel.send({ content: '-# <:ChillPoldo:1311760332695408640>  jesgran.ovh', components: [row] });
-
-      // Cancella anche il messaggio del comando per evitare spam
+      await message.channel.send({ content: '-# <:Pepolove:828227022903705611> Jesgran.ovh', components: [row] });
       await message.delete().catch(() => {});
-
-      await message.react('✅');
     } catch (err) {
       console.error(err);
-      // Prova comunque a cancellare il comando se possibile
       try { await message.delete(); } catch {}
       try { await message.reply('Errore durante l\'invio del messaggio.'); } catch {}
     }
@@ -73,72 +57,112 @@ client.on(Events.MessageCreate, async (message) => {
 
 // Handle button -> open modal
 client.on(Events.InteractionCreate, async (interaction) => {
-  try {
+  try {    if (interaction.isButton() && interaction.customId === 'open_r6_form') {
+      if (!interaction.inGuild()) {
+        await interaction.reply({ content: 'Questo comando può essere usato solo nel server.', ephemeral: true });
+        return;
+      }
+
+      // Prima selezione della piattaforma
+      const platformSelect = new StringSelectMenuBuilder()
+        .setCustomId('platform_select')
+        .setPlaceholder('Seleziona la tua piattaforma')
+        .addOptions(
+          new StringSelectMenuOptionBuilder()
+            .setLabel('Personal Computer')
+            .setValue('pc')
+            .setEmoji('🤓'),
+          new StringSelectMenuOptionBuilder()
+            .setLabel('PlayStation')
+            .setValue('ps')
+            .setEmoji('📡'),
+          new StringSelectMenuOptionBuilder()
+            .setLabel('Xbox')
+            .setValue('xbox')
+            .setEmoji('📦')
+        );
+
+      const row = new ActionRowBuilder().addComponents(platformSelect);
+
+      await interaction.reply({
+        content: 'Seleziona la tua piattaforma per continuare con l\'iscrizione:',
+        components: [row],
+        ephemeral: true
+      });
+      return;
+    }
+
+    if (interaction.isStringSelectMenu() && interaction.customId === 'platform_select') {
+      const selectedPlatform = interaction.values[0];
+      
       const modal = new ModalBuilder()
-        .setCustomId('tf2_form_modal')
-        .setTitle('Iscrizione Torneo TF2');
+        .setCustomId(`r6_form_modal_${selectedPlatform}`)
+        .setTitle('Iscrizione Torneo R6');
 
-      const steamName = new TextInputBuilder()
-        .setCustomId('steam_name')
-        .setLabel('Nome Steam')
+      const r6Name = new TextInputBuilder()
+        .setCustomId('r6_name')
+        .setLabel('Nickname (Ubisoft)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Il tuo nome su Steam')
-        .setRequired(true);
-
-      const hours = new TextInputBuilder()
+        .setPlaceholder('Il tuo nickname in gioco')
+        .setRequired(true);      const hours = new TextInputBuilder()
         .setCustomId('hours_played')
-        .setLabel('Ore giocate in TF2')
+        .setLabel('Ore giocate (stima)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Es. 500')
+        .setPlaceholder('Es. 1200')
         .setRequired(true);
 
-      const mainClass = new TextInputBuilder()
-        .setCustomId('main_class')
-        .setLabel('Main (classe principale)')
+      const favOp = new TextInputBuilder()
+        .setCustomId('fav_op')
+        .setLabel('Operatore preferito')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Scout, Soldier, Pyro, ...')
-        .setRequired(true);
-
-      const row1 = new ActionRowBuilder().addComponents(steamName);
+        .setPlaceholder('Es. Iana / Jäger / Smoke')
+        .setRequired(true);      const row1 = new ActionRowBuilder().addComponents(r6Name);
       const row2 = new ActionRowBuilder().addComponents(hours);
-      const row3 = new ActionRowBuilder().addComponents(mainClass);
+      const row3 = new ActionRowBuilder().addComponents(favOp);
 
       modal.addComponents(row1, row2, row3);
 
       await interaction.showModal(modal);
       return;
-    }
-
-    if (interaction.isModalSubmit() && interaction.customId === 'tf2_form_modal') {
-
-      const steamName = interaction.fields.getTextInputValue('steam_name');
+    }    if (interaction.isModalSubmit() && interaction.customId.startsWith('r6_form_modal_')) {
+      const platform = interaction.customId.split('_').pop(); // Estrai piattaforma dal customId
+      const r6Name = interaction.fields.getTextInputValue('r6_name');
       const hours = interaction.fields.getTextInputValue('hours_played');
-      const mainClass = interaction.fields.getTextInputValue('main_class');
+      const favOp = interaction.fields.getTextInputValue('fav_op');
+
+      // Risposta immediata
+      await interaction.reply({ content: 'Elaboro la tua iscrizione... ⏳', ephemeral: true });
 
       const channelId = process.env.SUBMIT_CHANNEL_ID;
       if (!channelId) {
-        await interaction.reply({ content: 'SUBMIT_CHANNEL_ID non configurato.', ephemeral: true });
+        await interaction.editReply({ content: 'SUBMIT_CHANNEL_ID non configurato.' });
         return;
       }
 
       const submitChannel = await client.channels.fetch(channelId).catch(() => null);
       if (!submitChannel || !submitChannel.isTextBased()) {
-        await interaction.reply({ content: 'Canale di submit non valido.', ephemeral: true });
+        await interaction.editReply({ content: 'Canale di submit non valido.' });
         return;
       }
 
-      const embed = new EmbedBuilder()
-        .setColor(0x2b2d31)
+      // Converti nome piattaforma per display
+      const platformDisplay = platform === 'pc' ? 'PC (Uplay)' : 
+                            platform === 'ps' ? 'PlayStation' : 
+                            platform === 'xbox' ? 'Xbox' : platform;      
+        
+        const embed = new EmbedBuilder()
+        .setColor(0x0f4c81)
         .addFields(
-          { name: 'Nome Steam', value: steamName, inline: false },
-          { name: 'Ore giocate', value: hours, inline: false },
-          { name: 'Main', value: mainClass, inline: false },
+          { name: 'Nickname', value: r6Name, inline: true },
+          { name: 'Piattaforma', value: platformDisplay, inline: true },
+          { name: 'Ore (stima)', value: hours, inline: true },
+          { name: 'Operatore Preferito', value: favOp, inline: true }
         )
         .setTimestamp(new Date());
 
       await submitChannel.send({ content: `<@${interaction.user.id}>`, embeds: [embed] });
 
-      await interaction.reply({ content: 'Iscrizione inviata! ✅', ephemeral: true });
+      await interaction.editReply({ content: 'Iscrizione R6 inviata! ✅' });
       return;
     }
   } catch (err) {
