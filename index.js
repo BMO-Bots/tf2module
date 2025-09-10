@@ -38,6 +38,7 @@ client.on(Events.MessageCreate, async (message) => {
 
   if (cmd.toLowerCase() === 'torneor6') {
     try {
+      // Consenti l'uso solo nel server e solo a chi ha il ruolo richiesto
       if (!message.inGuild?.() && !message.guild) return;
 
       const openBtn = new ButtonBuilder()
@@ -57,44 +58,7 @@ client.on(Events.MessageCreate, async (message) => {
 
 // Handle button -> open modal
 client.on(Events.InteractionCreate, async (interaction) => {
-  try {    if (interaction.isButton() && interaction.customId === 'open_r6_form') {
-      if (!interaction.inGuild()) {
-        await interaction.reply({ content: 'Questo comando può essere usato solo nel server.', ephemeral: true });
-        return;
-      }
-
-      // Prima selezione della piattaforma
-      const platformSelect = new StringSelectMenuBuilder()
-        .setCustomId('platform_select')
-        .setPlaceholder('Seleziona la tua piattaforma')
-        .addOptions(
-          new StringSelectMenuOptionBuilder()
-            .setLabel('Personal Computer')
-            .setValue('pc')
-            .setEmoji('🤓'),
-          new StringSelectMenuOptionBuilder()
-            .setLabel('PlayStation')
-            .setValue('ps')
-            .setEmoji('📡'),
-          new StringSelectMenuOptionBuilder()
-            .setLabel('Xbox')
-            .setValue('xbox')
-            .setEmoji('📦')
-        );
-
-      const row = new ActionRowBuilder().addComponents(platformSelect);
-
-      await interaction.reply({
-        content: 'Seleziona la tua piattaforma per continuare con l\'iscrizione:',
-        components: [row],
-        ephemeral: true
-      });
-      return;
-    }
-
-    if (interaction.isStringSelectMenu() && interaction.customId === 'platform_select') {
-      const selectedPlatform = interaction.values[0];
-      
+  try {
       const modal = new ModalBuilder()
         .setCustomId(`r6_form_modal_${selectedPlatform}`)
         .setTitle('Iscrizione Torneo R6');
