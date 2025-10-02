@@ -1,6 +1,6 @@
 'use strict';
 require('dotenv').config();
-const { Client, GatewayIntentBits, Partials, Events, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, EmbedBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, Events, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, EmbedBuilder } = require('discord.js');
 const http = require('http');
 const PORT = process.env.PORT || 3000;
 
@@ -24,7 +24,6 @@ const client = new Client({
 
 // Simple command prefix
 const PREFIX = '?';
-// Nessun ruolo richiesto
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`Bot loggato come ${c.user.tag}`);
@@ -36,16 +35,20 @@ client.on(Events.MessageCreate, async (message) => {
 
   const [cmd] = message.content.slice(PREFIX.length).trim().split(/\s+/);
 
-  if (cmd.toLowerCase() === 'torneor6') {
+  if (cmd.toLowerCase() === 'torneof3') {
     try {
       if (!message.inGuild?.() && !message.guild) return;
 
       const openBtn = new ButtonBuilder()
-        .setCustomId('open_r6_form')
+        .setCustomId('open_sf3_form')
         .setStyle(ButtonStyle.Success)
-        .setLabel('Apri il form R6');      const row = new ActionRowBuilder().addComponents(openBtn);
+        .setLabel('Apri il form Street Fighter 3')
+        .setEmoji('🥊');
 
-      await message.channel.send({ content: '-# <:Pepolove:828227022903705611> Jesgran.ovh', components: [row] });
+      const row = new ActionRowBuilder().addComponents(openBtn);      await message.channel.send({ 
+        content: 'Se non hai ore metti 0 e basta\n-# <:Pepolove:828227022903705611> Jesgran.ovh', 
+        components: [row] 
+      });
       await message.delete().catch(() => {});
     } catch (err) {
       console.error(err);
@@ -57,81 +60,55 @@ client.on(Events.MessageCreate, async (message) => {
 
 // Handle button -> open modal
 client.on(Events.InteractionCreate, async (interaction) => {
-  try {    if (interaction.isButton() && interaction.customId === 'open_r6_form') {
+  try {
+    if (interaction.isButton() && interaction.customId === 'open_sf3_form') {
       if (!interaction.inGuild()) {
         await interaction.reply({ content: 'Questo comando può essere usato solo nel server.', ephemeral: true });
         return;
       }
 
-      // Prima selezione della piattaforma
-      const platformSelect = new StringSelectMenuBuilder()
-        .setCustomId('platform_select')
-        .setPlaceholder('Seleziona la tua piattaforma')
-        .addOptions(
-          new StringSelectMenuOptionBuilder()
-            .setLabel('Personal Computer')
-            .setValue('pc')
-            .setEmoji('🤓'),
-          new StringSelectMenuOptionBuilder()
-            .setLabel('PlayStation')
-            .setValue('ps')
-            .setEmoji('📡'),
-          new StringSelectMenuOptionBuilder()
-            .setLabel('Xbox')
-            .setValue('xbox')
-            .setEmoji('📦')
-        );
-
-      const row = new ActionRowBuilder().addComponents(platformSelect);
-
-      await interaction.reply({
-        content: 'Seleziona la tua piattaforma per continuare con l\'iscrizione:',
-        components: [row],
-        ephemeral: true
-      });
-      return;
-    }
-
-    if (interaction.isStringSelectMenu() && interaction.customId === 'platform_select') {
-      const selectedPlatform = interaction.values[0];
-      
       const modal = new ModalBuilder()
-        .setCustomId(`r6_form_modal_${selectedPlatform}`)
-        .setTitle('Iscrizione Torneo R6');
+        .setCustomId('sf3_form_modal')
+        .setTitle('Iscrizione Torneo Street Fighter 3');
 
-      const r6Name = new TextInputBuilder()
-        .setCustomId('r6_name')
-        .setLabel('Nickname (Ubisoft)')
+      const playerName = new TextInputBuilder()
+        .setCustomId('player_name')
+        .setLabel('Nome giocatore')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Il tuo nickname in gioco')
-        .setRequired(true);      const hours = new TextInputBuilder()
-        .setCustomId('hours_played')
-        .setLabel('Ore giocate (stima)')
-        .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Es. 1200')
+        .setPlaceholder('Il tuo nome o nickname')
         .setRequired(true);
 
-      const favOp = new TextInputBuilder()
-        .setCustomId('fav_op')
-        .setLabel('Operatore preferito')
+      const matchesPlayed = new TextInputBuilder()
+        .setCustomId('matches_played')
+        .setLabel('Quanti Match hai su Street Fighter 3?')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Es. Iana / Jäger / Smoke')
-        .setRequired(true);      const row1 = new ActionRowBuilder().addComponents(r6Name);
-      const row2 = new ActionRowBuilder().addComponents(hours);
-      const row3 = new ActionRowBuilder().addComponents(favOp);
+        .setPlaceholder('Es. 150, 300, 1000+')
+        .setRequired(true);
+
+      const fightcadeRank = new TextInputBuilder()
+        .setCustomId('fightcade_rank')
+        .setLabel('Che rango sei su Fightcade?')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Es. S, A, B, C, D, E')
+        .setRequired(true);
+
+      const row1 = new ActionRowBuilder().addComponents(playerName);
+      const row2 = new ActionRowBuilder().addComponents(matchesPlayed);
+      const row3 = new ActionRowBuilder().addComponents(fightcadeRank);
 
       modal.addComponents(row1, row2, row3);
 
       await interaction.showModal(modal);
       return;
-    }    if (interaction.isModalSubmit() && interaction.customId.startsWith('r6_form_modal_')) {
-      const platform = interaction.customId.split('_').pop(); // Estrai piattaforma dal customId
-      const r6Name = interaction.fields.getTextInputValue('r6_name');
-      const hours = interaction.fields.getTextInputValue('hours_played');
-      const favOp = interaction.fields.getTextInputValue('fav_op');
+    }
+
+    if (interaction.isModalSubmit() && interaction.customId === 'sf3_form_modal') {
+      const playerName = interaction.fields.getTextInputValue('player_name');
+      const matchesPlayed = interaction.fields.getTextInputValue('matches_played');
+      const fightcadeRank = interaction.fields.getTextInputValue('fightcade_rank');
 
       // Risposta immediata
-      await interaction.reply({ content: 'Elaboro la tua iscrizione... ⏳', ephemeral: true });
+      await interaction.reply({ content: 'Elaboro la tua iscrizione al torneo... ⏳', ephemeral: true });
 
       const channelId = process.env.SUBMIT_CHANNEL_ID;
       if (!channelId) {
@@ -145,24 +122,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return;
       }
 
-      // Converti nome piattaforma per display
-      const platformDisplay = platform === 'pc' ? 'PC (Uplay)' : 
-                            platform === 'ps' ? 'PlayStation' : 
-                            platform === 'xbox' ? 'Xbox' : platform;      
-        
-        const embed = new EmbedBuilder()
-        .setColor(0x0f4c81)
+      const embed = new EmbedBuilder()
+        .setColor(0xFF6B35) // Colore arancione per Street Fighter
+        .setTitle('🥊 Nuova Iscrizione')
         .addFields(
-          { name: 'Nickname', value: r6Name, inline: true },
-          { name: 'Piattaforma', value: platformDisplay, inline: true },
-          { name: 'Ore (stima)', value: hours, inline: true },
-          { name: 'Operatore Preferito', value: favOp, inline: true }
+          { name: '👤 Nome Giocatore', value: playerName, inline: true },
+          { name: '🎮 Match Giocati', value: matchesPlayed, inline: true },
+          { name: '🏆 Rango Fightcade', value: fightcadeRank, inline: true }
         )
+        .setFooter({ text: 'puppa il culo' })
         .setTimestamp(new Date());
 
       await submitChannel.send({ content: `<@${interaction.user.id}>`, embeds: [embed] });
 
-      await interaction.editReply({ content: 'Iscrizione R6 inviata! ✅' });
+      await interaction.editReply({ content: 'Iscrizione Street Fighter 3 inviata con successo! ✅🥊' });
       return;
     }
   } catch (err) {
