@@ -24,6 +24,7 @@ const client = new Client({
 
 // Simple command prefix
 const PREFIX = '?';
+// Nessun ruolo richiesto
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`Bot loggato come ${c.user.tag}`);
@@ -35,23 +36,28 @@ client.on(Events.MessageCreate, async (message) => {
 
   const [cmd] = message.content.slice(PREFIX.length).trim().split(/\s+/);
 
-  if (cmd.toLowerCase() === 'torneof3') {
+  if (cmd.toLowerCase() === 'torneotf2') {
     try {
+      // Consenti l'uso solo nel server
       if (!message.inGuild?.() && !message.guild) return;
 
       const openBtn = new ButtonBuilder()
-        .setCustomId('open_sf3_form')
+        .setCustomId('open_tf2_form')
         .setStyle(ButtonStyle.Success)
-        .setLabel('Apri il form Street Fighter 3')
-        .setEmoji('🥊');
+        .setLabel('Apri il form TF2');
 
-      const row = new ActionRowBuilder().addComponents(openBtn);      await message.channel.send({ 
-        content: 'Se non hai ore metti 0 e basta\n-# <:Pepolove:828227022903705611> Jesgran.ovh', 
-        components: [row] 
-      });
+      const row = new ActionRowBuilder().addComponents(openBtn);
+
+      // Invia solo il tasto con il testo richiesto
+      await message.channel.send({ content: '-# <:ChillPoldo:1311760332695408640>  jesgran.ovh', components: [row] });
+
+      // Cancella anche il messaggio del comando per evitare spam
       await message.delete().catch(() => {});
+
+      await message.react('✅');
     } catch (err) {
       console.error(err);
+      // Prova comunque a cancellare il comando se possibile
       try { await message.delete(); } catch {}
       try { await message.reply('Errore durante l\'invio del messaggio.'); } catch {}
     }
@@ -61,40 +67,41 @@ client.on(Events.MessageCreate, async (message) => {
 // Handle button -> open modal
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
-    if (interaction.isButton() && interaction.customId === 'open_sf3_form') {
+    if (interaction.isButton() && interaction.customId === 'open_tf2_form') {
+      // Controllo che sia nel server prima di aprire il modal
       if (!interaction.inGuild()) {
         await interaction.reply({ content: 'Questo comando può essere usato solo nel server.', ephemeral: true });
         return;
       }
 
       const modal = new ModalBuilder()
-        .setCustomId('sf3_form_modal')
-        .setTitle('Iscrizione Torneo Street Fighter 3');
+        .setCustomId('tf2_form_modal')
+        .setTitle('Iscrizione Torneo TF2');
 
-      const playerName = new TextInputBuilder()
-        .setCustomId('player_name')
-        .setLabel('Nome giocatore')
+      const steamName = new TextInputBuilder()
+        .setCustomId('steam_name')
+        .setLabel('Nome Steam')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Il tuo nome o nickname')
+        .setPlaceholder('Il tuo nome su Steam')
         .setRequired(true);
 
-      const matchesPlayed = new TextInputBuilder()
-        .setCustomId('matches_played')
-        .setLabel('Quanti Match hai su Street Fighter 3?')
+      const hours = new TextInputBuilder()
+        .setCustomId('hours_played')
+        .setLabel('Ore giocate in TF2')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Es. 150, 300, 1000+')
+        .setPlaceholder('Es. 500')
         .setRequired(true);
 
-      const fightcadeRank = new TextInputBuilder()
-        .setCustomId('fightcade_rank')
-        .setLabel('Che rango sei su Fightcade?')
+      const mainClass = new TextInputBuilder()
+        .setCustomId('main_class')
+        .setLabel('Main (classe principale)')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Es. S, A, B, C, D, E')
+        .setPlaceholder('Scout, Soldier, Pyro, ...')
         .setRequired(true);
 
-      const row1 = new ActionRowBuilder().addComponents(playerName);
-      const row2 = new ActionRowBuilder().addComponents(matchesPlayed);
-      const row3 = new ActionRowBuilder().addComponents(fightcadeRank);
+      const row1 = new ActionRowBuilder().addComponents(steamName);
+      const row2 = new ActionRowBuilder().addComponents(hours);
+      const row3 = new ActionRowBuilder().addComponents(mainClass);
 
       modal.addComponents(row1, row2, row3);
 
@@ -102,40 +109,36 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    if (interaction.isModalSubmit() && interaction.customId === 'sf3_form_modal') {
-      const playerName = interaction.fields.getTextInputValue('player_name');
-      const matchesPlayed = interaction.fields.getTextInputValue('matches_played');
-      const fightcadeRank = interaction.fields.getTextInputValue('fightcade_rank');
+    if (interaction.isModalSubmit() && interaction.customId === 'tf2_form_modal') {
 
-      // Risposta immediata
-      await interaction.reply({ content: 'Elaboro la tua iscrizione al torneo... ⏳', ephemeral: true });
+      const steamName = interaction.fields.getTextInputValue('steam_name');
+      const hours = interaction.fields.getTextInputValue('hours_played');
+      const mainClass = interaction.fields.getTextInputValue('main_class');
 
       const channelId = process.env.SUBMIT_CHANNEL_ID;
       if (!channelId) {
-        await interaction.editReply({ content: 'SUBMIT_CHANNEL_ID non configurato.' });
+        await interaction.reply({ content: 'SUBMIT_CHANNEL_ID non configurato.', ephemeral: true });
         return;
       }
 
       const submitChannel = await client.channels.fetch(channelId).catch(() => null);
       if (!submitChannel || !submitChannel.isTextBased()) {
-        await interaction.editReply({ content: 'Canale di submit non valido.' });
+        await interaction.reply({ content: 'Canale di submit non valido.', ephemeral: true });
         return;
       }
 
       const embed = new EmbedBuilder()
-        .setColor(0xFF6B35) // Colore arancione per Street Fighter
-        .setTitle('🥊 Nuova Iscrizione')
+        .setColor(0x2b2d31)
         .addFields(
-          { name: '👤 Nome Giocatore', value: playerName, inline: true },
-          { name: '🎮 Match Giocati', value: matchesPlayed, inline: true },
-          { name: '🏆 Rango Fightcade', value: fightcadeRank, inline: true }
+          { name: 'Nome Steam', value: steamName, inline: false },
+          { name: 'Ore giocate', value: hours, inline: false },
+          { name: 'Main', value: mainClass, inline: false },
         )
-        .setFooter({ text: 'puppa il culo' })
         .setTimestamp(new Date());
 
       await submitChannel.send({ content: `<@${interaction.user.id}>`, embeds: [embed] });
 
-      await interaction.editReply({ content: 'Iscrizione Street Fighter 3 inviata con successo! ✅🥊' });
+      await interaction.reply({ content: 'Iscrizione inviata! ✅', ephemeral: true });
       return;
     }
   } catch (err) {
