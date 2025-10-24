@@ -1,8 +1,41 @@
 'use strict';
 require('dotenv').config();
 const { Client, GatewayIntentBits, Partials, Events, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, EmbedBuilder } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 const http = require('http');
 const PORT = process.env.PORT || 3000;
+
+// Percorso del database JSON
+const DB_PATH = path.join(__dirname, 'database.json');
+
+// Funzioni per gestire il database
+function readDatabase() {
+  try {
+    const data = fs.readFileSync(DB_PATH, 'utf8');
+    return JSON.parse(data);
+  } catch (err) {
+    console.error('Errore lettura database:', err);
+    return { votes: {}, votedUsers: {} };
+  }
+}
+
+function writeDatabase(data) {
+  try {
+    fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Errore scrittura database:', err);
+  }
+}
+
+// Variabile database (verrà ricaricata ogni volta)
+let db = readDatabase();
+
+// Funzione per ricaricare il database
+function reloadDatabase() {
+  db = readDatabase();
+  return db;
+}
 
 // Server HTTP per uptime checks
 http.createServer((req, res) => {
@@ -24,6 +57,43 @@ const client = new Client({
 
 // Simple command prefix
 const PREFIX = '?';
+
+// Oggetto per tracciare i messaggi di votazione attivi
+const voteMessages = {};
+
+// Funzione per normalizzare i voti (minuscole, senza accenti)
+function normalizeVote(text) {
+  return text
+    .toLowerCase()
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+// Funzione per generare l'embed della classifica
+function generateVoteEmbed() {
+  reloadDatabase(); // Ricarica il database prima di generare l'embed
+  const sortedVotes = Object.entries(db.votes)
+    .map(([eventName, count]) => ({ eventName, count }))
+    .sort((a, b) => b.count - a.count);
+
+  let description = '**📊 Classifica Votazioni:**\n\n';
+
+  if (sortedVotes.length === 0) {
+    description += 'Nessun voto ancora. Inizia a votare!';
+  } else {
+    sortedVotes.forEach((vote, index) => {
+      description += `${index + 1}. **${vote.eventName}** - ${vote.count} ${vote.count === 1 ? 'voto' : 'voti'}\n`;
+    });
+  }
+
+  return new EmbedBuilder()
+    .setColor(0x2b2d31)
+    .setTitle('🗳️ Votazione Prossimo Evento')
+    .setDescription(description)
+    .setTimestamp(new Date());
+}
+
 // Nessun ruolo richiesto
 
 client.once(Events.ClientReady, async (c) => {
@@ -35,7 +105,6 @@ client.on(Events.MessageCreate, async (message) => {
   if (!message.content.startsWith(PREFIX)) return;
 
   const [cmd] = message.content.slice(PREFIX.length).trim().split(/\s+/);
-
   if (cmd.toLowerCase() === 'torneotf2') {
     try {
       // Consenti l'uso solo nel server
@@ -62,12 +131,36 @@ client.on(Events.MessageCreate, async (message) => {
       try { await message.reply('Errore durante l\'invio del messaggio.'); } catch {}
     }
   }
+  if (cmd.toLowerCase() === 'votazione') {
+    try {
+      if (!message.inGuild?.() && !message.guild) return;
+
+      const embed = generateVoteEmbed();
+
+      const voteBtn = new ButtonBuilder()
+        .setCustomId('open_vote_modal')
+        .setStyle(ButtonStyle.Primary)
+        .setLabel('🗳️ Vota');
+
+      const row = new ActionRowBuilder().addComponents(voteBtn);
+
+      const sentMessage = await message.channel.send({ embeds: [embed], components: [row] });
+      
+      // Salva il messaggio per poterlo aggiornare
+      voteMessages[sentMessage.id] = { channelId: message.channelId };
+      
+      await message.delete().catch(() => {});
+    } catch (err) {
+      console.error(err);
+      try { await message.delete(); } catch {}
+      try { await message.reply('Errore durante l\'invio della votazione.'); } catch {}
+    }
+  }
 });
 
 // Handle button -> open modal
 client.on(Events.InteractionCreate, async (interaction) => {
-  try {
-    if (interaction.isButton() && interaction.customId === 'open_tf2_form') {
+  try {    if (interaction.isButton() && interaction.customId === 'open_tf2_form') {
       // Controllo che sia nel server prima di aprire il modal
       if (!interaction.inGuild()) {
         await interaction.reply({ content: 'Questo comando può essere usato solo nel server.', ephemeral: true });
@@ -109,7 +202,29 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    if (interaction.isModalSubmit() && interaction.customId === 'tf2_form_modal') {
+    if (interaction.isButton() && interaction.customId === 'open_vote_modal') {
+      if (!interaction.inGuild()) {
+        await interaction.reply({ content: 'Questo comando può essere usato solo nel server.', ephemeral: true });
+        return;
+      }
+
+      const modal = new ModalBuilder()
+        .setCustomId('vote_modal')
+        .setTitle('Vota il Prossimo Evento');
+
+      const eventInput = new TextInputBuilder()
+        .setCustomId('event_name')
+        .setLabel('Nome dell\'Evento \ Gioco')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Es: TF2 buffed man gooning group')
+        .setRequired(true);
+
+      const row = new ActionRowBuilder().addComponents(eventInput);
+      modal.addComponents(row);
+
+      await interaction.showModal(modal);
+      return;
+    }    if (interaction.isModalSubmit() && interaction.customId === 'tf2_form_modal') {
 
       const steamName = interaction.fields.getTextInputValue('steam_name');
       const hours = interaction.fields.getTextInputValue('hours_played');
@@ -139,6 +254,54 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await submitChannel.send({ content: `<@${interaction.user.id}>`, embeds: [embed] });
 
       await interaction.reply({ content: 'Iscrizione inviata! ✅', ephemeral: true });
+      return;
+    }    if (interaction.isModalSubmit() && interaction.customId === 'vote_modal') {
+      const eventName = interaction.fields.getTextInputValue('event_name');
+      const normalizedVote = normalizeVote(eventName);
+      const userId = interaction.user.id;
+
+      if (!normalizedVote) {
+        await interaction.reply({ content: 'Per favore inserisci un nome valido.', ephemeral: true });
+        return;
+      }
+
+      // Ricarica il database per avere i dati più recenti
+      reloadDatabase();
+
+      // Controlla se l'utente ha già votato
+      if (db.votedUsers[userId]) {
+        const previousVote = db.votedUsers[userId];
+        await interaction.reply({ content: `❌ Hai già votato per: **${previousVote}**\nPuoi votare solo una volta!`, ephemeral: true });
+        return;
+      }
+
+      // Registra il voto nel database
+      db.votes[normalizedVote] = (db.votes[normalizedVote] || 0) + 1;
+      db.votedUsers[userId] = eventName;
+      writeDatabase(db);
+
+      // Aggiorna tutti i messaggi di votazione
+      for (const [messageId, messageInfo] of Object.entries(voteMessages)) {
+        try {
+          const channel = await client.channels.fetch(messageInfo.channelId);
+          if (channel && channel.isTextBased()) {
+            const msg = await channel.messages.fetch(messageId).catch(() => null);
+            if (msg) {
+              const embed = generateVoteEmbed();
+              const voteBtn = new ButtonBuilder()
+                .setCustomId('open_vote_modal')
+                .setStyle(ButtonStyle.Primary)
+                .setLabel('🗳️ Vota');
+              const row = new ActionRowBuilder().addComponents(voteBtn);
+              await msg.edit({ embeds: [embed], components: [row] });
+            }
+          }
+        } catch (err) {
+          console.error('Errore nell\'aggiornamento del messaggio di votazione:', err);
+        }
+      }
+
+      await interaction.reply({ content: `✅ Voto registrato per: **${eventName}**`, ephemeral: true });
       return;
     }
   } catch (err) {
