@@ -130,8 +130,7 @@ client.on(Events.MessageCreate, async (message) => {
       try { await message.delete(); } catch {}
       try { await message.reply('Errore durante l\'invio del messaggio.'); } catch {}
     }
-  }
-  if (cmd.toLowerCase() === 'votazione') {
+  }  if (cmd.toLowerCase() === 'votazione') {
     try {
       if (!message.inGuild?.() && !message.guild) return;
 
@@ -154,6 +153,22 @@ client.on(Events.MessageCreate, async (message) => {
       console.error(err);
       try { await message.delete(); } catch {}
       try { await message.reply('Errore durante l\'invio della votazione.'); } catch {}
+    }
+  }
+
+  if (cmd.toLowerCase() === 'votazionenulla') {
+    try {
+      if (!message.inGuild?.() && !message.guild) return;
+
+      // Resetta il database
+      db = { votes: {}, votedUsers: {} };
+      writeDatabase(db);
+
+      await message.reply('✅ Database votazioni resettato!');
+      await message.react('✅');
+    } catch (err) {
+      console.error(err);
+      try { await message.reply('Errore durante il reset del database.'); } catch {}
     }
   }
 });
