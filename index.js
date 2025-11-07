@@ -171,6 +171,61 @@ client.on(Events.MessageCreate, async (message) => {
       try { await message.reply('Errore durante il reset del database.'); } catch {}
     }
   }
+
+  if (cmd.toLowerCase() === 'mostravotazioni') {
+    try {
+      if (!message.inGuild?.() && !message.guild) return;
+
+      reloadDatabase();
+
+      if (Object.keys(db.votedUsers).length === 0) {
+        await message.reply('📭 Nessun voto registrato ancora.');
+        return;
+      }
+
+      // Raggruppa gli utenti per voto normalizzato
+      const voteGroups = {};
+      for (const [userId, eventName] of Object.entries(db.votedUsers)) {
+        const normalized = normalizeVote(eventName);
+        if (!voteGroups[normalized]) {
+          voteGroups[normalized] = {
+            displayName: eventName,
+            users: []
+          };
+        }
+        voteGroups[normalized].users.push(userId);
+      }
+
+      // Ordina per numero di voti
+      const sortedGroups = Object.entries(voteGroups)
+        .sort((a, b) => b[1].users.length - a[1].users.length);
+
+      // Costruisci l'embed
+      let description = '**🗳️ Dettaglio Completo Votazioni:**\n\n';
+
+      for (const [normalized, data] of sortedGroups) {
+        const count = data.users.length;
+        description += `**${data.displayName}** - ${count} ${count === 1 ? 'voto' : 'voti'}\n`;
+        
+        // Aggiungi i tag degli utenti
+        const userTags = data.users.map(userId => `<@${userId}>`).join(', ');
+        description += `└─ ${userTags}\n\n`;
+      }
+
+      const embed = new EmbedBuilder()
+        .setColor(0x2b2d31)
+        .setTitle('📊 Dettaglio Votazioni')
+        .setDescription(description)
+        .setTimestamp(new Date());
+
+      await message.channel.send({ embeds: [embed] });
+      await message.delete().catch(() => {});
+    } catch (err) {
+      console.error(err);
+      try { await message.delete(); } catch {}
+      try { await message.reply('Errore durante la visualizzazione delle votazioni.'); } catch {}
+    }
+  }
 });
 
 // Handle button -> open modal
@@ -327,4 +382,72 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
+// Funzione: Invia messaggio campanellina
+async function sendFreeGame(channel) {
+  if (channel.type !== ChannelType.GuildText) {
+    throw new Error('Il canale deve essere testuale.');
+  }
+
+  // Elimina vecchio messaggio
+  const oldMessageId = toggleMessageCache.get(channel.id);
+  if (oldMessageId) {
+    try {
+      const oldMessage = await channel.messages.fetch(oldMessageId);
+      await oldMessage.delete();
+    } catch (error) {
+      if (error.code !== 10008) console.warn('⚠️ Impossibile eliminare vecchio messaggio');
+    }
+  }
+
+  // Crea embed
+  const embed = new EmbedBuilder()
+    .setDescription('Vuoi essere pingato anche tu quando un gioco è gratis? Clicca qui sotto 👇');
+
+  // Crea button
+  const button = new ButtonBuilder()
+    .setCustomId('toggle_notify_role')
+    .setLabel('LIKE, ISCRIZIONE E CAMPANELLA')
+    .setEmoji('🔔')
+    .setStyle(ButtonStyle.Danger);
+
+  const row = new ActionRowBuilder().addComponents(button);
+
+  // Invia messaggio
+  const message = await channel.send({
+    embeds: [embed],
+    components: [row]
+  });
+
+  toggleMessageCache.set(channel.id, message.id);
+  return message;
+}
+
+// Funzione: Risolvi canale notifiche
+async function resolveNotifyChannel() {
+  if (!NOTIFY_CHANNEL_ID) {
+    throw new Error('NOTIFY_CHANNEL_ID non configurato.');
+  }
+
+  const channel = await client.channels.fetch(NOTIFY_CHANNEL_ID);
+  if (!channel) {
+    throw new Error('Canale non trovato.');
+  }
+
+  if (channel.type !== ChannelType.GuildText) {
+    throw new Error('Il canale deve essere testuale.');
+  }
+
+  return channel;
+}
+
+// Funzione: Posta gioco gratis
+async function postFreeGame(gameTitle, gameUrl) {
+  const channel = await resolveNotifyChannel();
+  const content = gameUrl ? `**${gameTitle}**\n${gameUrl}` : gameTitle;
+  return channel.send(content);
+}
+
 client.login(process.env.DISCORD_TOKEN);
+
+// Export
+module.exports = { client, sendFreeGame, postFreeGame, resolveNotifyChannel };
