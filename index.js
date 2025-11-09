@@ -474,7 +474,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
               const deleteBtn = new ButtonBuilder()
                 .setCustomId('delete_vote_confirm')
                 .setStyle(ButtonStyle.Danger)
-                .setLabel('🗑️ Ho sbagliato')
+                .setLabel('Ho sbagliato')
                 .setEmoji('🗑️');
               const row = new ActionRowBuilder().addComponents(voteBtn, deleteBtn);
               await msg.edit({ embeds: [embed], components: [row] });
@@ -572,7 +572,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
               const deleteBtn = new ButtonBuilder()
                 .setCustomId('delete_vote_confirm')
                 .setStyle(ButtonStyle.Danger)
-                .setLabel('🗑️ Ho sbagliato')
+                .setLabel('Ho sbagliato')
                 .setEmoji('🗑️');
               const row = new ActionRowBuilder().addComponents(voteBtn, deleteBtn);
               await msg.edit({ embeds: [embed], components: [row] });
