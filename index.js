@@ -49,17 +49,25 @@ http.createServer((req, res) => {
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
   ],
-  partials: [Partials.Channel]
+  partials: [Partials.Channel, Partials.GuildMember]
 });
 
 // Simple command prefix
 const PREFIX = '?';
 
+// Configurazione campanellina
+const NOTIFY_ROLE_ID = process.env.NOTIFY_ROLE_ID ?? '1436392414318301225';
+const NOTIFY_CHANNEL_ID = process.env.NOTIFY_CHANNEL_ID?.trim();
+
 // Oggetto per tracciare i messaggi di votazione attivi
 const voteMessages = {};
+
+// Cache per il messaggio "pinnato" della campanellina
+const toggleMessageCache = new Map();
 
 // Funzione per normalizzare i voti (minuscole, senza accenti)
 function normalizeVote(text) {
@@ -101,6 +109,49 @@ client.once(Events.ClientReady, async (c) => {
 });
 
 client.on(Events.MessageCreate, async (message) => {
+  // Gestione campanellina: se qualcuno scrive nel canale notifiche
+  if (NOTIFY_CHANNEL_ID && message.channel.id === NOTIFY_CHANNEL_ID) {
+    // Ignora se è il messaggio della campanellina stessa
+    if (toggleMessageCache.get(message.channel.id) === message.id) return;
+    if (message.components?.some(row => 
+      row.components?.some(c => c.customId === 'toggle_notify_role')
+    )) return;
+
+    try {
+      // Elimina il vecchio messaggio campanellina
+      const oldMessageId = toggleMessageCache.get(message.channel.id);
+      if (oldMessageId) {
+        try {
+          const oldMessage = await message.channel.messages.fetch(oldMessageId);
+          await oldMessage.delete();
+        } catch (error) {
+          if (error.code !== 10008) console.warn('⚠️ Impossibile eliminare vecchio messaggio');
+        }
+      }
+
+      // Crea nuovo messaggio campanellina
+      const embed = new EmbedBuilder()
+        .setDescription('Vuoi essere pingato anche tu quando un gioco è gratis? Clicca qui sotto 👇');
+
+      const button = new ButtonBuilder()
+        .setCustomId('toggle_notify_role')
+        .setLabel('LIKE, ISCRIZIONE E CAMPANELLA')
+        .setEmoji('🔔')
+        .setStyle(ButtonStyle.Danger);
+
+      const row = new ActionRowBuilder().addComponents(button);
+
+      const sentMessage = await message.channel.send({
+        embeds: [embed],
+        components: [row]
+      });
+
+      toggleMessageCache.set(message.channel.id, sentMessage.id);
+    } catch (error) {
+      console.error('❌ Errore campanellina:', error);
+    }
+  }
+
   if (message.author.bot) return;
   if (!message.content.startsWith(PREFIX)) return;
 
@@ -141,7 +192,13 @@ client.on(Events.MessageCreate, async (message) => {
         .setStyle(ButtonStyle.Primary)
         .setLabel('🗳️ Vota');
 
-      const row = new ActionRowBuilder().addComponents(voteBtn);
+      const deleteBtn = new ButtonBuilder()
+        .setCustomId('delete_vote_confirm')
+        .setStyle(ButtonStyle.Danger)
+        .setLabel('Ho sbagliato')
+        .setEmoji('🗑️');
+
+      const row = new ActionRowBuilder().addComponents(voteBtn, deleteBtn);
 
       const sentMessage = await message.channel.send({ embeds: [embed], components: [row] });
       
@@ -230,7 +287,51 @@ client.on(Events.MessageCreate, async (message) => {
 
 // Handle button -> open modal
 client.on(Events.InteractionCreate, async (interaction) => {
-  try {    if (interaction.isButton() && interaction.customId === 'open_tf2_form') {
+  try {
+    // Gestione pulsante campanellina
+    if (interaction.isButton() && interaction.customId === 'toggle_notify_role') {
+      // Validazione
+      if (!interaction.guild || !interaction.member?.roles) {
+        return interaction.reply({
+          content: '❌ Questo pulsante funziona solo nei server.',
+          ephemeral: true
+        });
+      }
+
+      // Defer immediato per evitare timeout
+      await interaction.deferReply({ ephemeral: true });
+
+      const role = interaction.guild.roles.cache.get(NOTIFY_ROLE_ID);
+      if (!role) {
+        return interaction.editReply({
+          content: '❌ Ruolo notifiche non trovato. Contatta un admin.'
+        });
+      }
+
+      const hasRole = interaction.member.roles.cache.has(NOTIFY_ROLE_ID);
+
+      try {
+        if (hasRole) {
+          await interaction.member.roles.remove(NOTIFY_ROLE_ID);
+          await interaction.editReply({
+            content: '🔕 Campanellina disattivata. Vergogna!'
+          });
+        } else {
+          await interaction.member.roles.add(NOTIFY_ROLE_ID);
+          await interaction.editReply({
+            content: '🔔 Campanellina attivata! Smash the like button.'
+          });
+        }
+      } catch (error) {
+        console.error('❌ Errore gestione ruolo:', error);
+        await interaction.editReply({
+          content: '❌ Errore durante l\'aggiornamento del ruolo.'
+        });
+      }
+      return;
+    }
+
+    if (interaction.isButton() && interaction.customId === 'open_tf2_form') {
       // Controllo che sia nel server prima di aprire il modal
       if (!interaction.inGuild()) {
         await interaction.reply({ content: 'Questo comando può essere usato solo nel server.', ephemeral: true });
@@ -294,7 +395,113 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       await interaction.showModal(modal);
       return;
-    }    if (interaction.isModalSubmit() && interaction.customId === 'tf2_form_modal') {
+    }
+
+    // Pulsante "Ho sbagliato" - chiede conferma
+    if (interaction.isButton() && interaction.customId === 'delete_vote_confirm') {
+      if (!interaction.inGuild()) {
+        await interaction.reply({ content: 'Questo comando può essere usato solo nel server.', ephemeral: true });
+        return;
+      }
+
+      const userId = interaction.user.id;
+      reloadDatabase();
+
+      // Controlla se l'utente ha votato
+      if (!db.votedUsers[userId]) {
+        await interaction.reply({ content: '❌ Non hai ancora votato!', ephemeral: true });
+        return;
+      }
+
+      const votedFor = db.votedUsers[userId];
+
+      // Crea i pulsanti di conferma
+      const yesBtn = new ButtonBuilder()
+        .setCustomId('delete_vote_yes')
+        .setStyle(ButtonStyle.Danger)
+        .setLabel('Sì, elimina');
+
+      const noBtn = new ButtonBuilder()
+        .setCustomId('delete_vote_no')
+        .setStyle(ButtonStyle.Secondary)
+        .setLabel('No, annulla');
+
+      const row = new ActionRowBuilder().addComponents(yesBtn, noBtn);
+
+      await interaction.reply({
+        content: `🗑️ Vuoi eliminare il tuo voto per **${votedFor}**?`,
+        components: [row],
+        ephemeral: true
+      });
+      return;
+    }
+
+    // Conferma eliminazione voto - SÌ
+    if (interaction.isButton() && interaction.customId === 'delete_vote_yes') {
+      const userId = interaction.user.id;
+      reloadDatabase();
+
+      if (!db.votedUsers[userId]) {
+        await interaction.update({ content: '❌ Non hai votato!', components: [] });
+        return;
+      }
+
+      const votedFor = db.votedUsers[userId];
+      const normalizedVote = normalizeVote(votedFor);
+
+      // Rimuovi il voto
+      if (db.votes[normalizedVote]) {
+        db.votes[normalizedVote]--;
+        if (db.votes[normalizedVote] <= 0) {
+          delete db.votes[normalizedVote];
+        }
+      }
+      delete db.votedUsers[userId];
+      writeDatabase(db);
+
+      // Aggiorna tutti i messaggi di votazione
+      for (const [messageId, messageInfo] of Object.entries(voteMessages)) {
+        try {
+          const channel = await client.channels.fetch(messageInfo.channelId);
+          if (channel && channel.isTextBased()) {
+            const msg = await channel.messages.fetch(messageId).catch(() => null);
+            if (msg) {
+              const embed = generateVoteEmbed();
+              const voteBtn = new ButtonBuilder()
+                .setCustomId('open_vote_modal')
+                .setStyle(ButtonStyle.Primary)
+                .setLabel('🗳️ Vota');
+              const deleteBtn = new ButtonBuilder()
+                .setCustomId('delete_vote_confirm')
+                .setStyle(ButtonStyle.Danger)
+                .setLabel('🗑️ Ho sbagliato')
+                .setEmoji('🗑️');
+              const row = new ActionRowBuilder().addComponents(voteBtn, deleteBtn);
+              await msg.edit({ embeds: [embed], components: [row] });
+            }
+          }
+        } catch (err) {
+          console.error('Errore nell\'aggiornamento del messaggio di votazione:', err);
+        }
+      }
+
+      await interaction.update({
+        content: `✅ Voto per **${votedFor}** eliminato con successo!`,
+        components: []
+      });
+      return;
+    }
+
+    // Conferma eliminazione voto - NO
+    if (interaction.isButton() && interaction.customId === 'delete_vote_no') {
+      await interaction.update({
+        content: '❌ Operazione annullata.',
+        components: []
+      });
+      return;
+    }
+
+    if (interaction.isModalSubmit() && interaction.customId === 'tf2_form_modal') {
 
       const steamName = interaction.fields.getTextInputValue('steam_name');
       const hours = interaction.fields.getTextInputValue('hours_played');
@@ -362,7 +569,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 .setCustomId('open_vote_modal')
                 .setStyle(ButtonStyle.Primary)
                 .setLabel('🗳️ Vota');
-              const row = new ActionRowBuilder().addComponents(voteBtn);
+              const deleteBtn = new ButtonBuilder()
+                .setCustomId('delete_vote_confirm')
+                .setStyle(ButtonStyle.Danger)
+                .setLabel('🗑️ Ho sbagliato')
+                .setEmoji('🗑️');
+              const row = new ActionRowBuilder().addComponents(voteBtn, deleteBtn);
               await msg.edit({ embeds: [embed], components: [row] });
             }
           }
@@ -382,72 +594,4 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-// Funzione: Invia messaggio campanellina
-async function sendFreeGame(channel) {
-  if (channel.type !== ChannelType.GuildText) {
-    throw new Error('Il canale deve essere testuale.');
-  }
-
-  // Elimina vecchio messaggio
-  const oldMessageId = toggleMessageCache.get(channel.id);
-  if (oldMessageId) {
-    try {
-      const oldMessage = await channel.messages.fetch(oldMessageId);
-      await oldMessage.delete();
-    } catch (error) {
-      if (error.code !== 10008) console.warn('⚠️ Impossibile eliminare vecchio messaggio');
-    }
-  }
-
-  // Crea embed
-  const embed = new EmbedBuilder()
-    .setDescription('Vuoi essere pingato anche tu quando un gioco è gratis? Clicca qui sotto 👇');
-
-  // Crea button
-  const button = new ButtonBuilder()
-    .setCustomId('toggle_notify_role')
-    .setLabel('LIKE, ISCRIZIONE E CAMPANELLA')
-    .setEmoji('🔔')
-    .setStyle(ButtonStyle.Danger);
-
-  const row = new ActionRowBuilder().addComponents(button);
-
-  // Invia messaggio
-  const message = await channel.send({
-    embeds: [embed],
-    components: [row]
-  });
-
-  toggleMessageCache.set(channel.id, message.id);
-  return message;
-}
-
-// Funzione: Risolvi canale notifiche
-async function resolveNotifyChannel() {
-  if (!NOTIFY_CHANNEL_ID) {
-    throw new Error('NOTIFY_CHANNEL_ID non configurato.');
-  }
-
-  const channel = await client.channels.fetch(NOTIFY_CHANNEL_ID);
-  if (!channel) {
-    throw new Error('Canale non trovato.');
-  }
-
-  if (channel.type !== ChannelType.GuildText) {
-    throw new Error('Il canale deve essere testuale.');
-  }
-
-  return channel;
-}
-
-// Funzione: Posta gioco gratis
-async function postFreeGame(gameTitle, gameUrl) {
-  const channel = await resolveNotifyChannel();
-  const content = gameUrl ? `**${gameTitle}**\n${gameUrl}` : gameTitle;
-  return channel.send(content);
-}
-
 client.login(process.env.DISCORD_TOKEN);
-
-// Export
-module.exports = { client, sendFreeGame, postFreeGame, resolveNotifyChannel };
