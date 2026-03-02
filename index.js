@@ -385,9 +385,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       const eventInput = new TextInputBuilder()
         .setCustomId('event_name')
-        .setLabel('Nome dell\'Evento \ Gioco')
+        .setLabel('Nome della Categoria')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Es: TF2 buffed man gooning group')
+        .setPlaceholder('Es: TF2 buffed man')
         .setRequired(true);
 
       const row = new ActionRowBuilder().addComponents(eventInput);
