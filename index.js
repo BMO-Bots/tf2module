@@ -97,7 +97,7 @@ function generateVoteEmbed() {
 
   return new EmbedBuilder()
     .setColor(0x2b2d31)
-    .setTitle('🗳️ Votazione Prossimo Evento')
+    .setTitle('🗳️ Votazione Categoria Prossimo Contest Arte')
     .setDescription(description)
     .setTimestamp(new Date());
 }
@@ -381,7 +381,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       const modal = new ModalBuilder()
         .setCustomId('vote_modal')
-        .setTitle('Vota il Prossimo Evento');
+        .setTitle('Vota la prossima Categoria');
 
       const eventInput = new TextInputBuilder()
         .setCustomId('event_name')
