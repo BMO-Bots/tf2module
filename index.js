@@ -1,6 +1,6 @@
 'use strict';
 require('dotenv').config();
-const { Client, GatewayIntentBits, Partials, Events, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, Events, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, EmbedBuilder, StringSelectMenuBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
@@ -69,6 +69,9 @@ const voteMessages = {};
 // Cache per il messaggio "pinnato" della campanellina
 const toggleMessageCache = new Map();
 
+// Memoria temporanea per la piattaforma scelta dagli utenti (prima del modal)
+const r6PlatformSelections = new Map();
+
 // Funzione per normalizzare i voti (minuscole, senza accenti)
 function normalizeVote(text) {
   return text
@@ -113,7 +116,7 @@ client.on(Events.MessageCreate, async (message) => {
   if (NOTIFY_CHANNEL_ID && message.channel.id === NOTIFY_CHANNEL_ID) {
     // Ignora se è il messaggio della campanellina stessa
     if (toggleMessageCache.get(message.channel.id) === message.id) return;
-    if (message.components?.some(row => 
+    if (message.components?.some(row =>
       row.components?.some(c => c.customId === 'toggle_notify_role')
     )) return;
 
@@ -169,19 +172,17 @@ client.on(Events.MessageCreate, async (message) => {
       const row = new ActionRowBuilder().addComponents(openBtn);
 
       // Invia solo il tasto con il testo richiesto
-      await message.channel.send({ content: '-# <:ChillPoldo:1311760332695408640>  jesgran.ovh', components: [row] });
+      const sentBtnMessage = await message.channel.send({ content: '-# <:ChillPoldo:1311760332695408640>  jesgran.ovh', components: [row] }).catch(() => null);
 
-      // Cancella anche il messaggio del comando per evitare spam
-      await message.delete().catch(() => {});
-
-      await message.react('✅');
+      // Cancella il messaggio del comando per evitare spam
+      await message.delete().catch(() => { });
     } catch (err) {
       console.error(err);
       // Prova comunque a cancellare il comando se possibile
-      try { await message.delete(); } catch {}
-      try { await message.reply('Errore durante l\'invio del messaggio.'); } catch {}
+      try { await message.delete(); } catch { }
+      try { await message.reply('Errore durante l\'invio del messaggio.'); } catch { }
     }
-  }  if (cmd.toLowerCase() === 'votazione') {
+  } if (cmd.toLowerCase() === 'votazione') {
     try {
       if (!message.inGuild?.() && !message.guild) return;
 
@@ -201,15 +202,39 @@ client.on(Events.MessageCreate, async (message) => {
       const row = new ActionRowBuilder().addComponents(voteBtn, deleteBtn);
 
       const sentMessage = await message.channel.send({ embeds: [embed], components: [row] });
-      
+
       // Salva il messaggio per poterlo aggiornare
       voteMessages[sentMessage.id] = { channelId: message.channelId };
-      
-      await message.delete().catch(() => {});
+
+      await message.delete().catch(() => { });
     } catch (err) {
       console.error(err);
-      try { await message.delete(); } catch {}
-      try { await message.reply('Errore durante l\'invio della votazione.'); } catch {}
+      try { await message.delete(); } catch { }
+      try { await message.reply('Errore durante l\'invio della votazione.'); } catch { }
+    }
+  }
+
+  if (cmd.toLowerCase() === 'torneor6') {
+    try {
+      // Consenti l'uso solo nel server
+      if (!message.inGuild?.() && !message.guild) return;
+
+      const openBtn = new ButtonBuilder()
+        .setCustomId('open_r6_form')
+        .setStyle(ButtonStyle.Success)
+        .setLabel('Apri il form R6');
+
+      const row = new ActionRowBuilder().addComponents(openBtn);
+
+      // Invia solo il tasto con il testo richiesto (stessa cosa di TF2)
+      const sentBtnMessageR6 = await message.channel.send({ content: '-# <:ChillPoldo:1311760332695408640>  jesgran.ovh', components: [row] }).catch(() => null);
+
+      // Cancella anche il messaggio del comando per evitare spam
+      await message.delete().catch(() => { });
+    } catch (err) {
+      console.error(err);
+      try { await message.delete(); } catch { }
+      try { await message.reply('Errore durante l\'invio del messaggio.'); } catch { }
     }
   }
 
@@ -225,7 +250,7 @@ client.on(Events.MessageCreate, async (message) => {
       await message.react('✅');
     } catch (err) {
       console.error(err);
-      try { await message.reply('Errore durante il reset del database.'); } catch {}
+      try { await message.reply('Errore durante il reset del database.'); } catch { }
     }
   }
 
@@ -263,7 +288,7 @@ client.on(Events.MessageCreate, async (message) => {
       for (const [normalized, data] of sortedGroups) {
         const count = data.users.length;
         description += `**${data.displayName}** - ${count} ${count === 1 ? 'voto' : 'voti'}\n`;
-        
+
         // Aggiungi i tag degli utenti
         const userTags = data.users.map(userId => `<@${userId}>`).join(', ');
         description += `└─ ${userTags}\n\n`;
@@ -276,11 +301,11 @@ client.on(Events.MessageCreate, async (message) => {
         .setTimestamp(new Date());
 
       await message.channel.send({ embeds: [embed] });
-      await message.delete().catch(() => {});
+      await message.delete().catch(() => { });
     } catch (err) {
       console.error(err);
-      try { await message.delete(); } catch {}
-      try { await message.reply('Errore durante la visualizzazione delle votazioni.'); } catch {}
+      try { await message.delete(); } catch { }
+      try { await message.reply('Errore durante la visualizzazione delle votazioni.'); } catch { }
     }
   }
 });
@@ -368,6 +393,81 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const row3 = new ActionRowBuilder().addComponents(mainClass);
 
       modal.addComponents(row1, row2, row3);
+
+      await interaction.showModal(modal);
+      return;
+    }
+
+    if (interaction.isButton() && interaction.customId === 'open_r6_form') {
+      // Controllo che sia nel server prima di aprire la select
+      if (!interaction.inGuild()) {
+        await interaction.reply({ content: 'Questo comando può essere usato solo nel server.', ephemeral: true });
+        return;
+      }
+
+      const select = new StringSelectMenuBuilder()
+        .setCustomId('r6_platform_select')
+        .setPlaceholder('Seleziona la tua piattaforma')
+        .addOptions(
+          { label: 'Ubisoft', value: 'ubisoft' },
+          { label: 'Xbox', value: 'xbox' },
+          { label: 'PlayStation', value: 'playstation' }
+        );
+
+      const row = new ActionRowBuilder().addComponents(select);
+
+      await interaction.reply({ content: 'Seleziona la piattaforma per il torneo R6:', components: [row], ephemeral: true });
+      return;
+    }
+
+    if (interaction.isStringSelectMenu() && interaction.customId === 'r6_platform_select') {
+      // Salva la scelta e apri il modal con gli altri campi
+      const platform = interaction.values && interaction.values[0];
+      if (!platform) {
+        await interaction.reply({ content: 'Selezione piattaforma non valida.', ephemeral: true });
+        return;
+      }
+
+      r6PlatformSelections.set(interaction.user.id, platform);
+
+      const modal = new ModalBuilder()
+        .setCustomId('r6_form_modal')
+        .setTitle('Iscrizione Torneo R6');
+
+      const nickname = new TextInputBuilder()
+        .setCustomId('r6_nickname')
+        .setLabel('Nickname')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Il tuo nickname in R6')
+        .setRequired(true);
+
+      const main = new TextInputBuilder()
+        .setCustomId('r6_main')
+        .setLabel('Main (ruolo/classe)')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Es. Ash, Sledge, Support')
+        .setRequired(true);
+
+      const rank = new TextInputBuilder()
+        .setCustomId('r6_rank')
+        .setLabel('Rank')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Es. Gold IV, Platinum')
+        .setRequired(true);
+
+      const kd = new TextInputBuilder()
+        .setCustomId('r6_kd')
+        .setLabel('K/D')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Es. 1.15')
+        .setRequired(true);
+
+      const row1 = new ActionRowBuilder().addComponents(nickname);
+      const row2 = new ActionRowBuilder().addComponents(main);
+      const row3 = new ActionRowBuilder().addComponents(rank);
+      const row4 = new ActionRowBuilder().addComponents(kd);
+
+      modal.addComponents(row1, row2, row3, row4);
 
       await interaction.showModal(modal);
       return;
@@ -532,7 +632,54 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       await interaction.reply({ content: 'Iscrizione inviata! ✅', ephemeral: true });
       return;
-    }    if (interaction.isModalSubmit() && interaction.customId === 'vote_modal') {
+    }
+
+    if (interaction.isModalSubmit() && interaction.customId === 'r6_form_modal') {
+      try {
+        const nickname = interaction.fields.getTextInputValue('r6_nickname');
+        const main = interaction.fields.getTextInputValue('r6_main');
+        const rank = interaction.fields.getTextInputValue('r6_rank');
+        const kd = interaction.fields.getTextInputValue('r6_kd');
+
+        const platform = r6PlatformSelections.get(interaction.user.id) || 'sconosciuta';
+        // Pulizia memoria
+        r6PlatformSelections.delete(interaction.user.id);
+
+        const channelId = process.env.SUBMIT_CHANNEL_ID;
+        if (!channelId) {
+          await interaction.reply({ content: 'SUBMIT_CHANNEL_ID non configurato.', ephemeral: true });
+          return;
+        }
+
+        const submitChannel = await client.channels.fetch(channelId).catch(() => null);
+        if (!submitChannel || !submitChannel.isTextBased()) {
+          await interaction.reply({ content: 'Canale di submit non valido.', ephemeral: true });
+          return;
+        }
+
+        const embed = new EmbedBuilder()
+          .setColor(0x2b2d31)
+          .addFields(
+            { name: 'Nickname', value: nickname, inline: false },
+            { name: 'Main', value: main, inline: false },
+            { name: 'Rank', value: rank, inline: false },
+            { name: 'K/D', value: kd, inline: false },
+            { name: 'Piattaforma', value: platform, inline: false },
+          )
+          .setTimestamp(new Date());
+
+        await submitChannel.send({ content: `<@${interaction.user.id}>`, embeds: [embed] });
+
+        await interaction.reply({ content: 'Iscrizione inviata! ✅', ephemeral: true });
+        return;
+      } catch (err) {
+        console.error('Errore gestione r6_form_modal:', err);
+        try { await interaction.reply({ content: 'Si è verificato un errore durante l\'invio del form R6.', ephemeral: true }); } catch { }
+        return;
+      }
+    }
+
+    if (interaction.isModalSubmit() && interaction.customId === 'vote_modal') {
       const eventName = interaction.fields.getTextInputValue('event_name');
       const normalizedVote = normalizeVote(eventName);
       const userId = interaction.user.id;
@@ -589,7 +736,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   } catch (err) {
     console.error(err);
     if (interaction.isRepliable()) {
-      try { await interaction.reply({ content: 'Si è verificato un errore.', ephemeral: true }); } catch {}
+      try { await interaction.reply({ content: 'Si è verificato un errore.', ephemeral: true }); } catch { }
     }
   }
 });
