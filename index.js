@@ -182,7 +182,28 @@ client.on(Events.MessageCreate, async (message) => {
       try { await message.delete(); } catch { }
       try { await message.reply('Errore durante l\'invio del messaggio.'); } catch { }
     }
-  } if (cmd.toLowerCase() === 'votazione') {
+    } if (cmd.toLowerCase() === 'torneocs') {
+      try {
+        if (!message.inGuild?.() && !message.guild) return;
+
+        const openBtn = new ButtonBuilder()
+          .setCustomId('open_cs2_form')
+          .setStyle(ButtonStyle.Success)
+          .setLabel('Apri il form CS2');
+
+        const row = new ActionRowBuilder().addComponents(openBtn);
+
+        const sentBtnMessage = await message.channel.send({ content: '-# <:ChillPoldo:1311760332695408640>  jesgran.ovh', components: [row] }).catch(() => null);
+
+        await message.delete().catch(() => { });
+      } catch (err) {
+        console.error(err);
+        try { await message.delete(); } catch { }
+        try { await message.reply('Errore durante l\'invio del messaggio.'); } catch { }
+      }
+    }
+
+  if (cmd.toLowerCase() === 'votazione') {
     try {
       if (!message.inGuild?.() && !message.guild) return;
 
@@ -393,6 +414,39 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const row3 = new ActionRowBuilder().addComponents(mainClass);
 
       modal.addComponents(row1, row2, row3);
+
+      await interaction.showModal(modal);
+      return;
+    }
+
+    if (interaction.isButton() && interaction.customId === 'open_cs2_form') {
+      if (!interaction.inGuild()) {
+        await interaction.reply({ content: 'Questo comando può essere usato solo nel server.', ephemeral: true });
+        return;
+      }
+
+      const modal = new ModalBuilder()
+        .setCustomId('cs2_form_modal')
+        .setTitle('Iscrizione Torneo CS2');
+
+      const steamId = new TextInputBuilder()
+        .setCustomId('steam_id')
+        .setLabel('Link Steam')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('https://steamcommunity.com/id/...')
+        .setRequired(true);
+
+      const cs2Hours = new TextInputBuilder()
+        .setCustomId('cs2_hours')
+        .setLabel('Ore CS2')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Es. 1200')
+        .setRequired(true);
+
+      const row1 = new ActionRowBuilder().addComponents(steamId);
+      const row2 = new ActionRowBuilder().addComponents(cs2Hours);
+
+      modal.addComponents(row1, row2);
 
       await interaction.showModal(modal);
       return;
@@ -625,6 +679,36 @@ client.on(Events.InteractionCreate, async (interaction) => {
           { name: 'Nome Steam', value: steamName, inline: false },
           { name: 'Ore giocate', value: hours, inline: false },
           { name: 'Main', value: mainClass, inline: false },
+        )
+        .setTimestamp(new Date());
+
+      await submitChannel.send({ content: `<@${interaction.user.id}>`, embeds: [embed] });
+
+      await interaction.reply({ content: 'Iscrizione inviata! ✅', ephemeral: true });
+      return;
+    }
+
+    if (interaction.isModalSubmit() && interaction.customId === 'cs2_form_modal') {
+      const steamId = interaction.fields.getTextInputValue('steam_id');
+      const cs2Hours = interaction.fields.getTextInputValue('cs2_hours');
+
+      const channelId = process.env.SUBMIT_CHANNEL_ID;
+      if (!channelId) {
+        await interaction.reply({ content: 'SUBMIT_CHANNEL_ID non configurato.', ephemeral: true });
+        return;
+      }
+
+      const submitChannel = await client.channels.fetch(channelId).catch(() => null);
+      if (!submitChannel || !submitChannel.isTextBased()) {
+        await interaction.reply({ content: 'Canale di submit non valido.', ephemeral: true });
+        return;
+      }
+
+      const embed = new EmbedBuilder()
+        .setColor(0x2b2d31)
+        .addFields(
+          { name: 'Link Steam', value: steamId, inline: false },
+          { name: 'Ore CS2', value: cs2Hours, inline: false },
         )
         .setTimestamp(new Date());
 
